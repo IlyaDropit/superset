@@ -16,9 +16,9 @@ export default class Git {
   }
 
   async mainBranchGitRelease() {
-    const rel = this.releases.get(this.mainBranch);
+    let rel = this.releases.get(this.mainBranch);
     if (!rel) {
-      await this.loadRelease(this.mainBranch);
+      rel = await this.loadRelease(this.mainBranch);
     }
     return rel;
   }
@@ -88,9 +88,8 @@ export default class Git {
         // using this emoji to show it's been labeled by the bot
         labels.push('🏷️ bot');
       }
-      return labels;
     }
-    return [];
+    return labels;
   }
 
   async previousRelease(release) {

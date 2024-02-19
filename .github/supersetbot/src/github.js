@@ -4,7 +4,6 @@ import { throttling } from '@octokit/plugin-throttling';
 import { ORG_LIST, PROTECTED_LABEL_PATTERNS, COMMITTER_TEAM } from './metadata.js';
 
 class Github {
-
   #userInTeamCache;
 
   constructor({ context, issueNumber = null, token = null }) {
@@ -16,9 +15,10 @@ class Github {
       this.context.logError(msg);
     }
     const throttledOctokit = Octokit.plugin(throttling);
+    // eslint-disable-next-line new-cap
     this.octokit = new throttledOctokit({
       auth: githubToken,
-			throttle: {
+      throttle: {
         id: 'supersetbot',
         onRateLimit: (retryAfter, options, octokit, retryCount) => {
           octokit.log.warn(`Request quota exhausted for request ${options.method} ${options.url}`);
@@ -26,6 +26,7 @@ class Github {
             octokit.log.info(`Retrying after ${retryAfter} seconds!`);
             return true;
           }
+          return false;
         },
         onSecondaryRateLimit: (retryAfter, options, octokit) => {
           octokit.log.warn(`SecondaryRateLimit detected for request ${options.method} ${options.url}`);
@@ -118,7 +119,25 @@ class Github {
     }
   }
 
+  async searchMergedPrIds(query = '', onlyUnlabeled = true) {
+    // look for PRs
+    let q = `repo:${this.context.repo} is:merged ${query}`;
+    if (onlyUnlabeled) {
+      q = `${q} -label:"🏷️  bot"`;
+    }
+    console.log('QQQQ', q);
+    const data = await this.octokit.search.issuesAndPullRequests({
+      q,
+      per_page: 100,
+      page: 0,
+    });
+    return data.data.items.map((pr) => pr.number);
+  }
+
   async syncLabels(labels, prId, actor = null, verbose = false, dryRun = false) {
+    if (verbose) {
+      this.context.log(`[PR: ${prId}] - sync labels ${labels}`);
+    }
     let hasPerm = true;
     if (actor) {
       hasPerm = await this.checkIfUserInTeam(actor, COMMITTER_TEAM, verbose);
@@ -139,7 +158,7 @@ class Github {
     // Extract existing labels with the given prefixes
     const prefixes = ['🚢', '🍒', '🎯', '🏷️'];
     const existingPrefixLabels = existingLabels
-      .filter((label) => prefixes.some(s => label.name.startsWith(s)))
+      .filter((label) => prefixes.some((s) => label.name.startsWith(s)))
       .map((label) => label.name);
 
     // Labels to add
@@ -177,7 +196,7 @@ class Github {
   async checkIfUserInTeam(username, team, verbose = false) {
     let isInTeam = this.#userInTeamCache.get([username, team]);
     if (isInTeam !== undefined) {
-      console.log("CACHE HIT!!!!!")
+      console.log('CACHE HIT!!!!!');
       return isInTeam;
     }
 
@@ -192,7 +211,7 @@ class Github {
       team_slug: teamSlug,
       username,
     });
-    isInTeam = resp?.data?.state === 'active'
+    isInTeam = resp?.data?.state === 'active';
     this.#userInTeamCache.set([username, team], isInTeam);
     return isInTeam;
   }

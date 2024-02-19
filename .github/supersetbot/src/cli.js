@@ -55,7 +55,7 @@ export default function getCLI(context) {
       await github.unlabel(opts.issue, label, context, opts.actor, opts.verbose, opts.dryRun);
     });
 
-  program.command('release-label <prId>')
+  program.command('release-label-pr <prId>')
     .description('Figure out first release for PR and label it')
     .addOption(excludeCherriesOption)
     .action(async function (prId) {
@@ -77,7 +77,34 @@ export default function getCLI(context) {
       await wrapped(labels, prId, opts.actor, opts.verbose, opts.dryRun);
     });
 
-  program.command('on-release <release>')
+  program.command('release-label-prs')
+    .description('Given a set of PRs, auto-release label them')
+    .option('-s, --search-string <search-string>', 'extra search string to append using the GitHub mini-language')
+    .addOption(excludeCherriesOption)
+    .action(async function () {
+      const opts = context.processOptions(this, ['repo']);
+
+      const github = new Github({ context, issueNumber: opts.issue });
+
+      const prIds = await github.searchMergedPrIds(opts.searchString);
+      const git = new Git(context);
+      await git.loadReleases();
+
+      const prsPromises = prIds.map(async (prNumber) => {
+        const labels = await git.getReleaseLabels(prNumber, opts.verbose);
+        return { prNumber, labels };
+      });
+      const prs = await Promise.all(prsPromises);
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const { prNumber, labels } of prs) {
+        // Running sequentially to avoid rate limiting
+        // eslint-disable-next-line no-await-in-loop
+        await github.syncLabels(labels, prNumber, opts.actor, opts.verbose, opts.dryRun);
+      }
+    });
+
+  program.command('release-label <release>')
     .description('Figure out first release for PR and label it')
     .addOption(excludeCherriesOption)
     .action(async function (release) {
@@ -87,9 +114,10 @@ export default function getCLI(context) {
       const prs = await git.getPRsToSync(release, opts.verbose, opts.excludeCherries);
 
       const github = new Github({ context });
+      // eslint-disable-next-line no-restricted-syntax
       for (const { prNumber, labels } of prs) {
         // Running sequentially to avoid rate limiting
-        console.log(`[PR: ${prNumber}] - sync labels ${labels}`);
+        // eslint-disable-next-line no-await-in-loop
         await github.syncLabels(labels, prNumber, opts.actor, opts.verbose, opts.dryRun);
       }
     });
@@ -100,7 +128,6 @@ export default function getCLI(context) {
     .action(async function () {
       const opts = context.processOptions(this, ['issue', 'repo']);
       const github = new Github({ context, issueNumber: opts.issue });
-
       await github.assignOrgLabel(opts.issue, opts.verbose, opts.dryRun);
     });
 
